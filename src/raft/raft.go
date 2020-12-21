@@ -17,14 +17,20 @@ package raft
 //   in the same server.
 //
 
-import "sync"
-import "sync/atomic"
-import "../labrpc"
+import (
+	"labrpc"
+	"sync"
+)
 
 // import "bytes"
 // import "../labgob"
 
 
+const (
+	Follower	= 1
+	Candidate	= 2
+	Leader		= 3
+)
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -47,26 +53,53 @@ type ApplyMsg struct {
 // A Go object implementing a single Raft peer.
 //
 type Raft struct {
-	mu        sync.Mutex          // Lock to protect shared access to this peer's state
+	mu        		sync.Mutex          // Lock to protect shared access to this peer's state
+
+	noLeaderCond      *sync.Cond          //
+	leaderCond      *sync.Cond          //
+	applyCond		*sync.Cond
+
+
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
 
+	//  state for all server
+	State  		int		// follower ? leader? candidate?
+
+	applyCh		chan ApplyMsg
+
+	// timeout
+
+	electionTimeout		int
+	latestHeardTime		int64
+
+	heartbeatTimeout	int
+	lastSendTime		int64
+
+
+	// persistent state for all server
+	CurrentTerm		int			//服务器已知最新的任期（在服务器首次启动的时候初始化为0，单调递增
+	VotedFor		int			// 当前任期内，接受到我的投票的那个人的id， 如果我没有投给任何人，为空
+	log				[]*Entry	//日志条目;每个条目包含了term+command（第一个索引为1）
+
+	// volatile state for all server
+	CommitIndex		int		// 已提交的最高日志条目的index，已提交意味着这个日志同步到大多数sever。
+							// An entry is considered committed if it is safe for that entry to be applied to state machines.
+							// A log entry is committed once the leader that created
+							// the entry has replicated it on a majority of the servers
+							// 这个由leader来控制，
+
+	LastApplied		int		// 已应用到状态机的最高日志条目的index。follower根据commitIndex来决定是否更新这个字段
+
+	// volatile state on leaders， 每次选举后，重新init
+	NextIndex		[]int	// 长度为n，存着  对于每个服务器，发送到这个服务器的下一条日志条目
+	MatchIndex		[]int	// 长度为n，存着  对于每一台服务器，已知的已经复制到该服务器的最高日志条目的索引（
+
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
-
-}
-
-// return currentTerm and whether this server
-// believes it is the leader.
-func (rf *Raft) GetState() (int, bool) {
-
-	var term int
-	var isleader bool
-	// Your code here (2A).
-	return term, isleader
 }
 
 //
@@ -109,66 +142,6 @@ func (rf *Raft) readPersist(data []byte) {
 }
 
 
-
-
-//
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-//
-type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
-}
-
-//
-// example RequestVote RPC reply structure.
-// field names must start with capital letters!
-//
-type RequestVoteReply struct {
-	// Your data here (2A).
-}
-
-//
-// example RequestVote RPC handler.
-//
-func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here (2A, 2B).
-}
-
-//
-// example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.peers[].
-// expects RPC arguments in args.
-// fills in *reply with RPC reply, so caller should
-// pass &reply.
-// the types of the args and reply passed to Call() must be
-// the same as the types of the arguments declared in the
-// handler function (including whether they are pointers).
-//
-// The labrpc package simulates a lossy network, in which servers
-// may be unreachable, and in which requests and replies may be lost.
-// Call() sends a request and waits for a reply. If a reply arrives
-// within a timeout interval, Call() returns true; otherwise
-// Call() returns false. Thus Call() may not return for a while.
-// A false return can be caused by a dead server, a live server that
-// can't be reached, a lost request, or a lost reply.
-//
-// Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
-// is no need to implement your own timeouts around Call().
-//
-// look at the comments in ../labrpc/labrpc.go for more details.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
-//
-func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-	return ok
-}
-
-
 //
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
@@ -194,26 +167,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	return index, term, isLeader
 }
 
-//
-// the tester doesn't halt goroutines created by Raft after each test,
-// but it does call the Kill() method. your code can use killed() to
-// check whether Kill() has been called. the use of atomic avoids the
-// need for a lock.
-//
-// the issue is that long-running goroutines use memory and may chew
-// up CPU time, perhaps causing later tests to fail and generating
-// confusing debug output. any goroutine with a long-running loop
-// should call killed() to check whether it should stop.
-//
-func (rf *Raft) Kill() {
-	atomic.StoreInt32(&rf.dead, 1)
-	// Your code here, if desired.
-}
-
-func (rf *Raft) killed() bool {
-	z := atomic.LoadInt32(&rf.dead)
-	return z == 1
-}
 
 //
 // the service or tester wants to create a Raft server. the ports
@@ -238,6 +191,41 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
+	rf.applyCh = applyCh
+
+	// persistent state for all server
+	rf.CurrentTerm = 0 // init to 0 on first boot, increase monotonically
+
+	rf.VotedFor=-1	// if null if None
+
+	rf.heartbeatTimeout = 120
+
+	rf.log = make([]*Entry,1)	// first index is one
+	rf.log[0] = &Entry{}
+
+	// volatile state for all server
+	rf.CommitIndex = 0	// init to 0 ,increase monotonically
+	rf.LastApplied = 0	// init to 0 ,increase monotonically
+
+
+	rf.applyCond = sync.NewCond(&rf.mu)
+	rf.leaderCond = sync.NewCond(&rf.mu)
+	rf.noLeaderCond = sync.NewCond(&rf.mu)
+
+	rf.State = Follower
+	rf.ResetElectionTimer()
+
+	// all server will do:
+	rf.ApplyLogs()
+
+	// Follower will do:
+	rf.FollowerAction()
+
+	// Leader will do:
+	rf.LeaderAction()
 
 	return rf
 }
+
+
+

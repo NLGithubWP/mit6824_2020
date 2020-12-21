@@ -8,7 +8,7 @@ package raft
 // test with the original before submitting.
 //
 
-import "../labrpc"
+import "labrpc"
 import "log"
 import "sync"
 import "testing"
@@ -60,7 +60,7 @@ var ncpu_once sync.Once
 func make_config(t *testing.T, n int, unreliable bool) *config {
 	ncpu_once.Do(func() {
 		if runtime.NumCPU() < 2 {
-			fmt.Printf("warning: only one CPU, which may conceal locking bugs\n")
+			DPrintf("warning: only one CPU, which may conceal locking bugs\n")
 		}
 		rand.Seed(makeSeed())
 	})
@@ -161,6 +161,7 @@ func (cfg *config) start1(i int) {
 	} else {
 		cfg.saved[i] = MakePersister()
 	}
+	//fmt.Println("Saved",cfg.saved,cfg.saved[i].raftstate,cfg.saved[i].snapshot  )
 
 	cfg.mu.Unlock()
 
@@ -233,7 +234,7 @@ func (cfg *config) cleanup() {
 
 // attach server i to the net.
 func (cfg *config) connect(i int) {
-	// fmt.Printf("connect(%d)\n", i)
+	// DPrintf("connect(%d)\n", i)
 
 	cfg.connected[i] = true
 
@@ -256,7 +257,8 @@ func (cfg *config) connect(i int) {
 
 // detach server i from the net.
 func (cfg *config) disconnect(i int) {
-	// fmt.Printf("disconnect(%d)\n", i)
+	DPrintf("-----------------------------------------------------------------------" +
+		"disconnect(%d)---------------------------------------------------------------------\n", i)
 
 	cfg.connected[i] = false
 
@@ -298,16 +300,23 @@ func (cfg *config) setlongreordering(longrel bool) {
 }
 
 // check that there's exactly one leader.
-// try a few times in case re-elections are needed.
 func (cfg *config) checkOneLeader() int {
+
+	// try a few times in case re-elections are needed.
 	for iters := 0; iters < 10; iters++ {
+		// sleep to wait for the the selection
 		ms := 450 + (rand.Int63() % 100)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 
 		leaders := make(map[int][]int)
 		for i := 0; i < cfg.n; i++ {
+			//fmt.Println(cfg.connected)
+			//fmt.Println(cfg.rafts)
+
+			// if the server is on the net, check if it's the leader
 			if cfg.connected[i] {
 				if term, leader := cfg.rafts[i].GetState(); leader {
+					// l[1]: [1,2,3,4]
 					leaders[term] = append(leaders[term], i)
 				}
 			}
@@ -322,7 +331,7 @@ func (cfg *config) checkOneLeader() int {
 				lastTermWithLeader = term
 			}
 		}
-
+		fmt.Println("leaders: ",leaders)
 		if len(leaders) != 0 {
 			return leaders[lastTermWithLeader][0]
 		}
@@ -480,7 +489,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 // print the Test message.
 // e.g. cfg.begin("Test (2B): RPC counts aren't too high")
 func (cfg *config) begin(description string) {
-	fmt.Printf("%s ...\n", description)
+	DPrintf("%s ...\n", description)
 	cfg.t0 = time.Now()
 	cfg.rpcs0 = cfg.rpcTotal()
 	cfg.bytes0 = cfg.bytesTotal()
@@ -503,7 +512,7 @@ func (cfg *config) end() {
 		ncmds := cfg.maxIndex - cfg.maxIndex0   // number of Raft agreements reported
 		cfg.mu.Unlock()
 
-		fmt.Printf("  ... Passed --")
-		fmt.Printf("  %4.1f  %d %4d %7d %4d\n", t, npeers, nrpc, nbytes, ncmds)
+		DPrintf("  ... Passed --")
+		DPrintf("  %4.1f  %d %4d %7d %4d\n", t, npeers, nrpc, nbytes, ncmds)
 	}
 }

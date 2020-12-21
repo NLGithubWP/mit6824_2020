@@ -15,6 +15,7 @@ type KvOutput struct {
 }
 
 var KvModel = porcupine.Model{
+	// 把key相同的放在了一起, 先字典再list
 	Partition: func(history []porcupine.Operation) [][]porcupine.Operation {
 		m := make(map[string][]porcupine.Operation)
 		for _, v := range history {
