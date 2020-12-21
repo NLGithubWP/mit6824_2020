@@ -1,8 +1,8 @@
 package kvraft
 
 import (
-	"../labgob"
-	"../labrpc"
+	"labgob"
+	"labrpc"
 	"log"
 	"../raft"
 	"sync"

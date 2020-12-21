@@ -60,7 +60,7 @@ var ncpu_once sync.Once
 func make_config(t *testing.T, n int, unreliable bool) *config {
 	ncpu_once.Do(func() {
 		if runtime.NumCPU() < 2 {
-			DPrintf("warning: only one CPU, which may conceal locking bugs\n")
+			fmt.Printf("warning: only one CPU, which may conceal locking bugs\n")
 		}
 		rand.Seed(makeSeed())
 	})
@@ -234,7 +234,7 @@ func (cfg *config) cleanup() {
 
 // attach server i to the net.
 func (cfg *config) connect(i int) {
-	// DPrintf("connect(%d)\n", i)
+	// fmt.Printf()("connect(%d)\n", i)
 
 	cfg.connected[i] = true
 
@@ -489,7 +489,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 // print the Test message.
 // e.g. cfg.begin("Test (2B): RPC counts aren't too high")
 func (cfg *config) begin(description string) {
-	DPrintf("%s ...\n", description)
+	fmt.Printf("%s ...\n", description)
 	cfg.t0 = time.Now()
 	cfg.rpcs0 = cfg.rpcTotal()
 	cfg.bytes0 = cfg.bytesTotal()
@@ -512,7 +512,7 @@ func (cfg *config) end() {
 		ncmds := cfg.maxIndex - cfg.maxIndex0   // number of Raft agreements reported
 		cfg.mu.Unlock()
 
-		DPrintf("  ... Passed --")
-		DPrintf("  %4.1f  %d %4d %7d %4d\n", t, npeers, nrpc, nbytes, ncmds)
+		fmt.Printf("  ... Passed --")
+		fmt.Printf("  %4.1f  %d %4d %7d %4d\n", t, npeers, nrpc, nbytes, ncmds)
 	}
 }
