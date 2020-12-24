@@ -76,7 +76,7 @@ func (rf *Raft) requestVote(vote *int, g *sync.WaitGroup, args *RequestVoteArgs,
 		// If RPC request or response contains term T > currentTerm:
 		// set currentTerm = T, convert to follower (§5.1)
 		if 	reply.Term > rf.CurrentTerm{
-			DPrintf("[CandidateAction] : %d sendRequestVote to %d succeed, but %d dont vote since: reply term %d is bigger %d \n",
+			DPrintf("[CandidateAction] : %d sendRequestVote to %d succeed, but %d dont vote since: reply term %d is bigger %d, back to follower \n",
 				rf.me, k, k, reply.Term, rf.CurrentTerm)
 			rf.BackToFollower(reply.Term)
 			rf.mu.Unlock()

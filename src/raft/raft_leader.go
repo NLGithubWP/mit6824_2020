@@ -55,6 +55,7 @@ func  (rf *Raft) LeaderAction (){
 				go rf.SendHeartBeat()
 
 				DPrintf("[LeaderAction]: server %d Awake from sleep, now Im leader!\n", rf.me)
+				//spew.Printf("[AppendEntries]: leader's log are :\n %v \n", rf.me,  rf.log)
 
 			} else {
 				// if it's leader, send heartBeat to all

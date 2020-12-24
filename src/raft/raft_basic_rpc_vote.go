@@ -84,10 +84,14 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		//  If RPC request or response contains term T > currentTerm:
 		//  set currentTerm = T, convert to follower (§5.1)
 		if rf.CurrentTerm < args.Term{
+			DPrintf("[RequestVote]: server %d Convert to follower, args.Term %d, currentTerm: %d \n",
+				rf.me, args.Term,rf.CurrentTerm,
+			)
 			rf.BackToFollower(args.Term)
+			rf.ResetElectionTimer()
 		}else{
-			DPrintf("[RequestVote]: %d,Term %d,candidate's term %d, not back to follower \n",
-				rf.me , rf.CurrentTerm, args.Term)
+			//DPrintf("[RequestVote]: %d,Term %d,candidate's term %d, not back to follower \n",
+			//	rf.me , rf.CurrentTerm, args.Term)
 		}
 
 		/*
@@ -116,7 +120,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 					isVote = false
 				}
-			}else{
+			}else if args.LastLogTerm ==  rf.log[len(rf.log)-1].Term{
 				// if term is the same, compare which one is longer
 				// 最后一位的term相同，长度最长的最新
 				if len(rf.log) > args.LastLogIndex+1{
@@ -130,6 +134,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 						rf.me ,args.CandidateId, len(rf.log), args.LastLogIndex)
 					isVote = true
 				}
+			}else{
+				panic("Bugs here")
 			}
 
 		}else{

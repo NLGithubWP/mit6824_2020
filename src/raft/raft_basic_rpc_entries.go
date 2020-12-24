@@ -58,6 +58,9 @@ func (rf *Raft) AppendEntries(args *AppendEntries, reply *AppendEntriesReply)  {
 
 	}else{
 		if args.Term > rf.CurrentTerm{
+			DPrintf("[AppendEntries]: server %d back to follower, args.Term %d, currentTerm: %d \n",
+				rf.me, args.Term,rf.CurrentTerm,
+			)
 			rf.BackToFollower(args.Term)
 			rf.ResetElectionTimer()
 		}
@@ -136,6 +139,7 @@ func (rf *Raft) SendAppendEntriesToAll(name string){
 	//spew.Printf("[AppendEntries]: server %d SendAppendEntries, current logs are :\n%v \n", rf.me,  rf.log)
 	//fmt.Printf("\n")
 
+	CurrentTerm := rf.CurrentTerm
 	for i :=0;i<len(rf.peers);i++{
 		if i == rf.me{
 			continue
@@ -146,11 +150,11 @@ func (rf *Raft) SendAppendEntriesToAll(name string){
 
 			retry:
 				args := AppendEntries{}
-				args.Term = rf.CurrentTerm
+				args.Term = CurrentTerm
 				args.LeaderId = rf.me
 				args.PrevLogIndex = rf.NextIndex[i]-1
 				if args.PrevLogIndex < 0{
-					DPrintf("[AppendEntries_%s]: Server %d term %d expired, skip retry with nextIndex %d", name,rf.me, rf.CurrentTerm, rf.NextIndex[i])
+					DPrintf("[AppendEntries_%s]: Server %d term %d expired, skip retry with nextIndex %d", name,rf.me, CurrentTerm, rf.NextIndex[i])
 					return
 				}
 				args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
@@ -169,25 +173,30 @@ func (rf *Raft) SendAppendEntriesToAll(name string){
 					*nReplica ++
 					rf.NextIndex[i] = len(rf.log)
 					rf.MatchIndex[i] = len(rf.log)-1
-					DPrintf("[AppendEntries_%s]: Server %d boardCast appendEntry to server %d succeed, Update NextIndex to %v and MatchIndex to %v at term %d ", name,rf.me,i, rf.NextIndex, rf.MatchIndex,rf.CurrentTerm)
-					if len(rf.log)-1 > rf.CommitIndex &&
+					DPrintf("[AppendEntries_%s]: Server %d boardCast appendEntry to server %d succeed, Update NextIndex to %v and MatchIndex to %v at term %d ", name,rf.me,i, rf.NextIndex, rf.MatchIndex,CurrentTerm)
+					N := len(rf.log)-1
+					if N > rf.CommitIndex &&
 						*nReplica >= majority &&
-						rf.log[len(rf.log)-1].Term ==rf.CurrentTerm{
+						rf.log[N].Term ==CurrentTerm{
 
-						rf.CommitIndex = len(rf.log)-1
-						DPrintf("[AppendEntries_%s]: Server %d update commitIndex to %d at term %d ", name,rf.me, rf.CommitIndex, rf.CurrentTerm)
+						rf.CommitIndex = N
+						DPrintf("[AppendEntries_%s]: Server %d update commitIndex to %d at term %d ", name,rf.me, rf.CommitIndex, CurrentTerm)
 						rf.applyCond.Broadcast()
 					}
 					return
 				}else{
 					// term 过期， back to follower
-					if rf.CurrentTerm < reply.Term{
-						DPrintf("[AppendEntries_%s]: Server %d term %d expired, back to follower,reset timeout",name, rf.me, rf.CurrentTerm)
+					if CurrentTerm < reply.Term{
+						DPrintf("[AppendEntries_%s]: Server %d term %d expired, back to follower,reset timeout",name, rf.me, CurrentTerm)
 						rf.BackToFollower(reply.Term)
 						rf.ResetElectionTimer()
 					}else{
+						if CurrentTerm >reply.Term{
+							DPrintf("[AppendEntries_%s]: Server %d term %d expired, return", name,rf.me, CurrentTerm)
+							return
+						}
 						rf.NextIndex[i] -= 1
-						DPrintf("[AppendEntries_%s]: Server %d term %d expired, consistent check failed, retry with nextIndex %d", name,rf.me, rf.CurrentTerm, rf.NextIndex[i])
+						DPrintf("[AppendEntries_%s]: Server %d term %d expired, consistent check failed, retry with nextIndex %d", name,rf.me, CurrentTerm, rf.NextIndex[i])
 						goto retry
 					}
 				}

@@ -5,7 +5,6 @@ import (
 )
 
 func (rf *Raft) BackToFollower(term int){
-	DPrintf("[CandidateAction] : %d  Convert to follower \n", rf.me)
 	rf.CurrentTerm = term
 	rf.State = Follower
 	// goes to un-voted stats
