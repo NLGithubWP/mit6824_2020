@@ -14,6 +14,7 @@ func (rf *Raft) ApplyLogs(){
 				rf.applyCond.Wait()
 				rf.mu.Unlock()
 			} else {
+				rf.mu.Lock()
 
 				// If commitIndex > lastApplied: increment lastApplied,
 				// apply log[lastApplied] to state machine (§5.3)
@@ -22,16 +23,20 @@ func (rf *Raft) ApplyLogs(){
 
 				for i := rf.LastApplied+1; i<=rf.CommitIndex; i++{
 
+					if i > len( rf.log){
+						continue
+					}
 					applyMsg :=  ApplyMsg{
 						CommandValid: true,
 						Command: rf.log[i].Command,
 						CommandIndex: i}
 
 					rf.LastApplied += 1
-					DPrintf("[ApplyLogs]: Server %d Term %d State %d apply command %v of index %d and term %d to applyCh\n",
+					DPrintf("[ApplyLogs]: Server %d Term%d State %d apply command %v of index %d and term %d to applyCh\n",
 						rf.me, rf.CurrentTerm,rf.State, rf.log[i].Command ,applyMsg.CommandIndex, rf.log[i].Term)
 					rf.applyCh <- applyMsg
 				}
+				rf.mu.Unlock()
 
 			}
 
