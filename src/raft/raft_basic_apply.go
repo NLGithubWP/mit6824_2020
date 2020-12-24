@@ -23,7 +23,8 @@ func (rf *Raft) ApplyLogs(){
 
 				for i := rf.LastApplied+1; i<=rf.CommitIndex; i++{
 
-					if i > len( rf.log){
+					if i >=
+						len( rf.log){
 						continue
 					}
 					applyMsg :=  ApplyMsg{
