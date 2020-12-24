@@ -175,8 +175,10 @@ func (cfg *config) start1(i int) {
 			} else {
 				v := m.Command
 				cfg.mu.Lock()
+				// 遍历每一个server，看它在commandIndex对应位置上的command是否和这个新的匹配
 				for j := 0; j < len(cfg.logs); j++ {
 					if old, oldok := cfg.logs[j][m.CommandIndex]; oldok && old != v {
+						// 如果不想等，报错
 						// some server has already committed a different value for this entry!
 						err_msg = fmt.Sprintf("commit index=%v server=%v %v != server=%v %v",
 							m.CommandIndex, i, m.Command, j, old)
@@ -184,6 +186,7 @@ func (cfg *config) start1(i int) {
 				}
 				_, prevok := cfg.logs[i][m.CommandIndex-1]
 				cfg.logs[i][m.CommandIndex] = v
+				//fmt.Printf("Checking Server %d logs are %d  \n", i ,cfg.logs[i])
 				if m.CommandIndex > cfg.maxIndex {
 					cfg.maxIndex = m.CommandIndex
 				}
@@ -331,7 +334,7 @@ func (cfg *config) checkOneLeader() int {
 				lastTermWithLeader = term
 			}
 		}
-		fmt.Println("leaders: ",leaders)
+		//fmt.Println("leaders: ",leaders)
 		if len(leaders) != 0 {
 			return leaders[lastTermWithLeader][0]
 		}

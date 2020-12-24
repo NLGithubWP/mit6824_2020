@@ -10,24 +10,22 @@ func (rf *Raft) CandidateAction(){
 
 	rf.State = Candidate
 
-	vote := 0
-
 	// 1. Increment currentTerm
 	rf.CurrentTerm +=1
 
 	// 2. Vote for self
 	rf.VotedFor = rf.me
 	// vote: how many vote got
-	vote +=1
+	vote :=1
 	rf.mu.Unlock()
 
 	// 3. Reset election timer
 	rf.ResetElectionTimer()
-	DPrintf("ResetElectionTimer: server %d reset timeout to %d  \n",
-		rf.me, rf.electionTimeout)
 
-	DPrintf("[CandidateAction] : election Timeout, %d begin selection, currently term is %d and got vote " +
+	DPrintf("[CandidateAction] : server %d election Timeout, begin selection, currently term is %d and got vote " +
 		"%d, there are %d peers: \n", rf.me,  rf.CurrentTerm, vote, len(rf.peers))
+	DPrintf("[CandidateAction] : server %d reset timeout to %d  \n",
+		rf.me, rf.electionTimeout)
 
 	// 4. Send requestVote RPCS to all servers
 	go rf.boardCaseRequestVote(&vote)
@@ -49,7 +47,7 @@ func (rf *Raft) boardCaseRequestVote(vote *int){
 		}
 		g.Add(1)
 		k := i
-		DPrintf("[CandidateAction] : %d send to %d \n", rf.me, k)
+		DPrintf("[CandidateAction] : %d send to %d Term %d \n", rf.me, k, rf.CurrentTerm)
 		go rf.requestVote(vote, &g, args, k)
 	}
 	g.Wait()
@@ -78,26 +76,27 @@ func (rf *Raft) requestVote(vote *int, g *sync.WaitGroup, args *RequestVoteArgs,
 		// If RPC request or response contains term T > currentTerm:
 		// set currentTerm = T, convert to follower (§5.1)
 		if 	reply.Term > rf.CurrentTerm{
+			DPrintf("[CandidateAction] : %d sendRequestVote to %d succeed, but %d dont vote since: reply term %d is bigger %d \n",
+				rf.me, k, k, reply.Term, rf.CurrentTerm)
 			rf.BackToFollower(reply.Term)
 			rf.mu.Unlock()
 			return
 		}else{
+			DPrintf("[CandidateAction] : %d sendRequestVote to %d succeed, but %d dont vote since: the log may not up-to-data compared with server %d \n",
+				rf.me, k, k, k)
 			rf.mu.Unlock()
 		}
 
 	}else if reply.VoteGranted == true{
 
-		//DPrintf("[CandidateAction] : server %d ,term %d, got %d vote \n",
-		//	rf.me,  rf.CurrentTerm, *vote)
-		rf.mu.Lock()
 		*vote += 1
-		rf.mu.Unlock()
+		DPrintf("[CandidateAction] : %d sendRequestVote to %d succeed, got %d vote at term %d \n",
+			rf.me, k, *vote, rf.CurrentTerm)
 		if rf.State!=Leader{
 			if *vote >= len(rf.peers)/2+1{
 				DPrintf("[CandidateAction] : <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< server %d ,become leader at " +
 					"term %d , it got %d vote >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n", rf.me,  rf.CurrentTerm, *vote)
 				rf.State = Leader
-
 				// lock should not include Broadcast
 				rf.leaderCond.Broadcast()
 			}

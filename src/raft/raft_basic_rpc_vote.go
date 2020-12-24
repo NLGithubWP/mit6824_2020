@@ -62,6 +62,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 // example RequestVote RPC handler.
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	DPrintf("[RequestVote]: %d Getting RequestVote requests %v, %v ! \n", rf.me, args, reply)
 	// Your code here (2A, 2B).
 
 	/*
@@ -73,11 +74,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	// 1. Reply false if term < currentTerm
 	var isVote bool
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
 
 	if args.Term < rf.CurrentTerm{
 		isVote = false
+		DPrintf("[RequestVote]: %d,Term %d,is larger than candidate's term %d, refuse vote! \n",
+			rf.me, rf.CurrentTerm, args.Term)
 	}else{
 
 		//  If RPC request or response contains term T > currentTerm:
@@ -85,8 +86,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		if rf.CurrentTerm < args.Term{
 			rf.BackToFollower(args.Term)
 		}else{
-			DPrintf("RequestVote: %d , Term %d , candidate's term %d,  " +
-				"not back to follower \n",
+			DPrintf("[RequestVote]: %d,Term %d,candidate's term %d, not back to follower \n",
 				rf.me , rf.CurrentTerm, args.Term)
 		}
 
@@ -100,29 +100,33 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		*/
 
 		if rf.VotedFor == -1 || rf.VotedFor == args.CandidateId{
-			// if index is the same, compare the term
-			if args.LastLogIndex == len(rf.log)-1{
-				if args.LastLogTerm >=  rf.log[len(rf.log)-1].Term{
+			// 比较最后一位的term，如果不相同，term大的最新
+			if args.LastLogTerm !=  rf.log[len(rf.log)-1].Term{
 
-					DPrintf("RequestVote: %d vote for %d, Term %d , candidate's term %d \n",
+				// 如果 args的term新
+				if args.LastLogTerm > rf.log[len(rf.log)-1].Term{
+
+					DPrintf("[RequestVote]: %d vote for %d, Term %d, candidate's term %d \n",
 						rf.me ,args.CandidateId, rf.CurrentTerm, args.Term)
 					isVote = true
 				}else{
-					DPrintf("RequestVote: %d No vote for %d, Term %d is larger than candidate's term %d \n",
+					// 如果 我的term新，拒绝
+					DPrintf("[RequestVote] : %d No vote for %d, Term %d is larger than candidate's term %d \n",
 						rf.me ,args.CandidateId, rf.CurrentTerm, args.Term)
 
 					isVote = false
 				}
-			}else if args.LastLogTerm ==  rf.log[len(rf.log)-1].Term{
+			}else{
 				// if term is the same, compare which one is longer
-				if len(rf.log) > args.LastLogIndex{
-					DPrintf("RequestVote: %d No vote for %d, im longger %d, candidate's LastLogIndex %d \n",
+				// 最后一位的term相同，长度最长的最新
+				if len(rf.log) > args.LastLogIndex+1{
+					DPrintf("[RequestVote] : %d No vote for %d, im longer %d, candidate's LastLogIndex %d \n",
 						rf.me ,args.CandidateId, len(rf.log), args.LastLogIndex)
 
 					isVote = false
 				}else{
 
-					DPrintf("RequestVote: %d vote for %d, im shorter %d, candidate's LastLogIndex %d \n",
+					DPrintf("[RequestVote] : %d vote for %d, im shorter %d, candidate's LastLogIndex %d \n",
 						rf.me ,args.CandidateId, len(rf.log), args.LastLogIndex)
 					isVote = true
 				}
@@ -130,7 +134,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 		}else{
 			isVote = false
-			DPrintf("RequestVote: %d refused vote for %d, Term %d , candidate's term %d , because current " +
+			DPrintf("[RequestVote]: %d refused vote for %d, Term %d , candidate's term %d , because current " +
 				"rf.VotedFor== %d \n", rf.me ,args.CandidateId, rf.CurrentTerm, args.Term, rf.VotedFor)
 		}
 	}

@@ -20,6 +20,7 @@ package raft
 import (
 	"labrpc"
 	"sync"
+	"time"
 )
 
 // import "bytes"
@@ -162,11 +163,20 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := true
 
 	// Your code here (2B).
+	if term, isLeader = rf.GetState(); isLeader{
+		// index: 将要插入的entry应该在的位置
+		index = len(rf.log)
+		entry := Entry{term, command}
 
+		rf.log = append(rf.log, &entry)
+		rf.lastSendTime = time.Now().UnixNano()
+		go rf.SendAppendEntriesToAll("ClientAppend")
+	}
+	//DPrintf("[Start]: Server %d Term %d Index %d, IsLeader %v\n", rf.me,
+	//rf.CurrentTerm, index, isLeader)
 
 	return index, term, isLeader
 }
-
 
 //
 // the service or tester wants to create a Raft server. the ports
@@ -195,18 +205,15 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// persistent state for all server
 	rf.CurrentTerm = 0 // init to 0 on first boot, increase monotonically
-
 	rf.VotedFor=-1	// if null if None
-
-	rf.heartbeatTimeout = 120
-
 	rf.log = make([]*Entry,1)	// first index is one
 	rf.log[0] = &Entry{}
+
+	rf.heartbeatTimeout = 120
 
 	// volatile state for all server
 	rf.CommitIndex = 0	// init to 0 ,increase monotonically
 	rf.LastApplied = 0	// init to 0 ,increase monotonically
-
 
 	rf.applyCond = sync.NewCond(&rf.mu)
 	rf.leaderCond = sync.NewCond(&rf.mu)

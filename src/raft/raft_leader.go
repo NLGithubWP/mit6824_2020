@@ -22,17 +22,27 @@ func  (rf *Raft) LeaderAction (){
 		set commitIndex = N (§5.3, §5.4).
 
 	 */
+
+	/*
+			The leader maintains a nextIndex for each follower,
+			which is the index of the next log entry the leader will
+			send to that follower.
+
+
+	 */
 	go func(){
 
 		for{
 			if term, isLeader := rf.GetState(); isLeader == false {
 				// if not leader, wait
 				rf.mu.Lock()
-				DPrintf("[LeaderAction] %d: Not leader, wait here, term is %d \n", rf.me, term)
+				DPrintf("[LeaderAction] Server %d: Not leader, wait here, term is %d \n", rf.me, term)
 				rf.leaderCond.Wait()
 				rf.mu.Unlock()
 
-				// initialized  NextIndex and MatchIndex according to current logs, after election
+				// When a leader first comes to power,
+				// it initializes all nextIndex values to the index just after the
+				// last one in its log (11 in Figure 7).
 				rf.NextIndex = make([]int, len(rf.peers))
 				rf.MatchIndex = make([]int,len(rf.peers))
 				for i:=0;i<len(rf.peers);i++{
@@ -43,16 +53,23 @@ func  (rf *Raft) LeaderAction (){
 				}
 				// send hb
 				go rf.SendHeartBeat()
+
 				DPrintf("[LeaderAction]: server %d Awake from sleep, now Im leader!\n", rf.me)
+
 			} else {
-				rf.mu.Lock()
 				// if it's leader, send heartBeat to all
 				if int((time.Now().UnixNano() - rf.lastSendTime)/int64(time.Millisecond)) >= rf.heartbeatTimeout{
 					//DPrintf("LeaderAction leader %d send hb at term %d \n", rf.me, term)
 					go rf.SendHeartBeat()
 				}
-				rf.mu.Unlock()
 			}
+			time.Sleep(10 * time.Millisecond)
 		}
 	}()
+}
+
+func (rf *Raft) SendHeartBeat(){
+	// update lastSendTime
+	rf.lastSendTime = time.Now().UnixNano()
+	rf.SendAppendEntriesToAll("HeartBeat")
 }
