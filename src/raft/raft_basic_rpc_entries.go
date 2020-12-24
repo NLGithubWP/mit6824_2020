@@ -133,9 +133,7 @@ func (rf *Raft) AppendEntries(args *AppendEntries, reply *AppendEntriesReply)  {
 
 func (rf *Raft) SendHeartBeat(){
 	// update lastSendTime
-	rf.mu.Lock()
 	rf.lastSendTime = time.Now().UnixNano()
-	rf.mu.Unlock()
 	nReplica := 1
 	rf.SendAppendEntriesToAll(nReplica)
 }
