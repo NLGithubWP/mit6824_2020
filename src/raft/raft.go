@@ -18,6 +18,8 @@ package raft
 //
 
 import (
+	"bytes"
+	"labgob"
 	"labrpc"
 	"sync"
 	"time"
@@ -26,11 +28,10 @@ import (
 // import "bytes"
 // import "../labgob"
 
-
 const (
-	Follower	= 1
-	Candidate	= 2
-	Leader		= 3
+	Follower  = 1
+	Candidate = 2
+	Leader    = 3
 )
 
 //
@@ -54,12 +55,11 @@ type ApplyMsg struct {
 // A Go object implementing a single Raft peer.
 //
 type Raft struct {
-	mu        		sync.Mutex          // Lock to protect shared access to this peer's state
+	mu sync.Mutex // Lock to protect shared access to this peer's state
 
-	noLeaderCond      *sync.Cond          //
-	leaderCond      *sync.Cond          //
-	applyCond		*sync.Cond
-
+	noLeaderCond *sync.Cond //
+	leaderCond   *sync.Cond //
+	applyCond    *sync.Cond
 
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
@@ -67,36 +67,35 @@ type Raft struct {
 	dead      int32               // set by Kill()
 
 	//  state for all server
-	State  		int		// follower ? leader? candidate?
+	State int // follower ? leader? candidate?
 
-	applyCh		chan ApplyMsg
+	applyCh chan ApplyMsg
 
 	// timeout
 
-	electionTimeout		int
-	latestHeardTime		int64
+	electionTimeout int
+	latestHeardTime int64
 
-	heartbeatTimeout	int
-	lastSendTime		int64
+	heartbeatTimeout int
+	lastSendTime     int64
 
-
-	// persistent state for all server
-	CurrentTerm		int			//服务器已知最新的任期（在服务器首次启动的时候初始化为0，单调递增
-	VotedFor		int			// 当前任期内，接受到我的投票的那个人的id， 如果我没有投给任何人，为空
-	log				[]*Entry	//日志条目;每个条目包含了term+command（第一个索引为1）
+	// persistent state for all server, persistent means those information will be stored on disk
+	CurrentTerm int      //服务器已知最新的任期（在服务器首次启动的时候初始化为0，单调递增
+	VotedFor    int      // 当前任期内，接受到我的投票的那个人的id， 如果我没有投给任何人，为空
+	log         []*Entry //日志条目;每个条目包含了term+command（第一个索引为1）
 
 	// volatile state for all server
-	CommitIndex		int		// 已提交的最高日志条目的index，已提交意味着这个日志同步到大多数sever。
-							// An entry is considered committed if it is safe for that entry to be applied to state machines.
-							// A log entry is committed once the leader that created
-							// the entry has replicated it on a majority of the servers
-							// 这个由leader来控制，
+	CommitIndex int // 已提交的最高日志条目的index，已提交意味着这个日志同步到大多数sever。
+	// An entry is considered committed if it is safe for that entry to be applied to state machines.
+	// A log entry is committed once the leader that created
+	// the entry has replicated it on a majority of the servers
+	// 这个由leader来控制，
 
-	LastApplied		int		// 已应用到状态机的最高日志条目的index。follower根据commitIndex来决定是否更新这个字段
+	LastApplied int // 已应用到状态机的最高日志条目的index。follower根据commitIndex来决定是否更新这个字段
 
 	// volatile state on leaders， 每次选举后，重新init
-	NextIndex		[]int	// 长度为n，存着  对于每个服务器，发送到这个服务器的下一条日志条目
-	MatchIndex		[]int	// 长度为n，存着  对于每一台服务器，已知的已经复制到该服务器的最高日志条目的索引（
+	NextIndex  []int // 长度为n，存着  对于每个服务器，发送到这个服务器的下一条日志条目
+	MatchIndex []int // 长度为n，存着  对于每一台服务器，已知的已经复制到该服务器的最高日志条目的索引（
 
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
@@ -117,8 +116,15 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
-}
 
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.CurrentTerm)
+	e.Encode(rf.VotedFor)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
+}
 
 //
 // restore previously persisted state.
@@ -140,8 +146,22 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.xxx = xxx
 	//   rf.yyy = yyy
 	// }
-}
 
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var CurrentTerm int
+	var VotedFor int
+	var log []*Entry
+	if d.Decode(&CurrentTerm) != nil ||
+		d.Decode(&VotedFor) != nil ||
+		d.Decode(&log) != nil {
+		panic("Err")
+	} else {
+		rf.CurrentTerm = CurrentTerm
+		rf.VotedFor = VotedFor
+		rf.log = log
+	}
+}
 
 //
 // the service using Raft (e.g. a k/v server) wants to start
@@ -163,13 +183,15 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := true
 
 	// Your code here (2B).
-	if term, isLeader = rf.GetState(); isLeader{
+	if term, isLeader = rf.GetState(); isLeader {
 		// index: 将要插入的entry应该在的位置
 		index = len(rf.log)
 		entry := Entry{term, command}
-
+		rf.mu.Lock()
 		rf.log = append(rf.log, &entry)
 		rf.lastSendTime = time.Now().UnixNano()
+		rf.persist()
+		rf.mu.Unlock()
 		go rf.SendAppendEntriesToAll("ClientAppend")
 	}
 	//DPrintf("[Start]: Server %d Term %d Index %d, IsLeader %v\n", rf.me,
@@ -198,22 +220,19 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// Your initialization code here (2A, 2B, 2C).
 
-	// initialize from state persisted before a crash
-	rf.readPersist(persister.ReadRaftState())
-
 	rf.applyCh = applyCh
 
 	// persistent state for all server
-	rf.CurrentTerm = 0 // init to 0 on first boot, increase monotonically
-	rf.VotedFor=-1	// if null if None
-	rf.log = make([]*Entry,1)	// first index is one
+	rf.CurrentTerm = 0         // init to 0 on first boot, increase monotonically
+	rf.VotedFor = -1           // if null if None
+	rf.log = make([]*Entry, 1) // first index is one
 	rf.log[0] = &Entry{}
 
 	rf.heartbeatTimeout = 120
 
 	// volatile state for all server
-	rf.CommitIndex = 0	// init to 0 ,increase monotonically
-	rf.LastApplied = 0	// init to 0 ,increase monotonically
+	rf.CommitIndex = 0 // init to 0 ,increase monotonically
+	rf.LastApplied = 0 // init to 0 ,increase monotonically
 
 	rf.applyCond = sync.NewCond(&rf.mu)
 	rf.leaderCond = sync.NewCond(&rf.mu)
@@ -231,8 +250,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// Leader will do:
 	rf.LeaderAction()
 
+	// initialize from state persisted before a crash
+	rf.mu.Lock()
+	rf.readPersist(persister.ReadRaftState())
+	rf.mu.Unlock()
+
 	return rf
 }
-
-
-

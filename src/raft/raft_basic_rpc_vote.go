@@ -6,10 +6,10 @@ package raft
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
 
-	Term 			int		//候选人term
-	CandidateId	 	int		//候选人ID
-	LastLogIndex	int		//最新log entry 的index
-	LastLogTerm		int		//最新log entry 的term
+	Term         int //候选人term
+	CandidateId  int //候选人ID
+	LastLogIndex int //最新log entry 的index
+	LastLogTerm  int //最新log entry 的term
 }
 
 //
@@ -19,8 +19,8 @@ type RequestVoteArgs struct {
 type RequestVoteReply struct {
 	// Your data here (2A).
 
-	Term 			int
-	VoteGranted 	bool	// true means candidate receive the vote
+	Term        int
+	VoteGranted bool // true means candidate receive the vote
 
 }
 
@@ -71,30 +71,29 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		2. If votedFor is null or candidateId, and candidate’s log is at
 		least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
 	*/
-
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	// 1. Reply false if term < currentTerm
 	var isVote bool
 
-	if args.Term < rf.CurrentTerm{
+	if args.Term < rf.CurrentTerm {
 		isVote = false
 		DPrintf("[RequestVote]: %d,Term %d,is larger than candidate's term %d, refuse vote! \n",
 			rf.me, rf.CurrentTerm, args.Term)
-	}else{
+	} else {
 
 		//  If RPC request or response contains term T > currentTerm:
 		//  set currentTerm = T, convert to follower (§5.1)
-		rf.mu.Lock()
-		if rf.CurrentTerm < args.Term{
+		if rf.CurrentTerm < args.Term {
 			DPrintf("[RequestVote]: server %d Convert to follower, args.Term %d, currentTerm: %d \n",
-				rf.me, args.Term,rf.CurrentTerm,
+				rf.me, args.Term, rf.CurrentTerm,
 			)
 			rf.BackToFollower(args.Term)
 			rf.ResetElectionTimer()
-		}else{
+		} else {
 			//DPrintf("[RequestVote]: %d,Term %d,candidate's term %d, not back to follower \n",
 			//	rf.me , rf.CurrentTerm, args.Term)
 		}
-		rf.mu.Unlock()
 		/*
 			2. Raft determines which of two logs is more up-to-date
 			by comparing the index and term of the last entries in the
@@ -104,58 +103,58 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			more up-to-date.
 		*/
 
-		if rf.VotedFor == -1 || rf.VotedFor == args.CandidateId{
+		if rf.VotedFor == -1 || rf.VotedFor == args.CandidateId {
 			// 比较最后一位的term，如果不相同，term大的最新
-			if args.LastLogTerm !=  rf.log[len(rf.log)-1].Term{
+			if args.LastLogTerm != rf.log[len(rf.log)-1].Term {
 
 				// 如果 args的term新
-				if args.LastLogTerm > rf.log[len(rf.log)-1].Term{
+				if args.LastLogTerm > rf.log[len(rf.log)-1].Term {
 
 					DPrintf("[RequestVote]: %d vote for %d, Term %d, candidate's term %d \n",
-						rf.me ,args.CandidateId, rf.CurrentTerm, args.Term)
+						rf.me, args.CandidateId, rf.CurrentTerm, args.Term)
 					isVote = true
-				}else{
+				} else {
 					// 如果 我的term新，拒绝
 					DPrintf("[RequestVote] : %d No vote for %d, Term %d is larger than candidate's term %d \n",
-						rf.me ,args.CandidateId, rf.CurrentTerm, args.Term)
+						rf.me, args.CandidateId, rf.CurrentTerm, args.Term)
 
 					isVote = false
 				}
-			}else if args.LastLogTerm ==  rf.log[len(rf.log)-1].Term{
+			} else if args.LastLogTerm == rf.log[len(rf.log)-1].Term {
 				// if term is the same, compare which one is longer
 				// 最后一位的term相同，长度最长的最新
-				if len(rf.log) > args.LastLogIndex+1{
+				if len(rf.log) > args.LastLogIndex+1 {
 					DPrintf("[RequestVote] : %d No vote for %d, im longer %d, candidate's LastLogIndex %d \n",
-						rf.me ,args.CandidateId, len(rf.log), args.LastLogIndex)
+						rf.me, args.CandidateId, len(rf.log), args.LastLogIndex)
 
 					isVote = false
-				}else{
+				} else {
 
 					DPrintf("[RequestVote] : %d vote for %d, im shorter %d, candidate's LastLogIndex %d \n",
-						rf.me ,args.CandidateId, len(rf.log), args.LastLogIndex)
+						rf.me, args.CandidateId, len(rf.log), args.LastLogIndex)
 					isVote = true
 				}
-			}else{
+			} else {
 				panic("Bugs here")
 			}
 
-		}else{
+		} else {
 			isVote = false
-			DPrintf("[RequestVote]: %d refused vote for %d, Term %d , candidate's term %d , because current " +
-				"rf.VotedFor== %d \n", rf.me ,args.CandidateId, rf.CurrentTerm, args.Term, rf.VotedFor)
+			DPrintf("[RequestVote]: %d refused vote for %d, Term %d , candidate's term %d , because current "+
+				"rf.VotedFor== %d \n", rf.me, args.CandidateId, rf.CurrentTerm, args.Term, rf.VotedFor)
 		}
 	}
 
-	if isVote{
+	if isVote {
 		rf.State = Follower
 
 		rf.VotedFor = args.CandidateId
+		rf.persist()
 
 		reply.Term = rf.CurrentTerm
 		reply.VoteGranted = true
-	}else{
+	} else {
 		reply.Term = rf.CurrentTerm
 		reply.VoteGranted = false
 	}
 }
-
