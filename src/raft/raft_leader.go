@@ -43,6 +43,7 @@ func  (rf *Raft) LeaderAction (){
 				// When a leader first comes to power,
 				// it initializes all nextIndex values to the index just after the
 				// last one in its log (11 in Figure 7).
+				rf.mu.Lock()
 				rf.NextIndex = make([]int, len(rf.peers))
 				rf.MatchIndex = make([]int,len(rf.peers))
 				for i:=0;i<len(rf.peers);i++{
@@ -51,6 +52,7 @@ func  (rf *Raft) LeaderAction (){
 					//(initialized to 0, increases monotonically)
 					rf.MatchIndex[i] = 0
 				}
+				rf.mu.Unlock()
 				// send hb
 				go rf.SendHeartBeat()
 
@@ -58,10 +60,14 @@ func  (rf *Raft) LeaderAction (){
 				//spew.Printf("[AppendEntries]: leader's log are :\n %v \n", rf.me,  rf.log)
 
 			} else {
+				rf.mu.Lock()
 				// if it's leader, send heartBeat to all
 				if int((time.Now().UnixNano() - rf.lastSendTime)/int64(time.Millisecond)) >= rf.heartbeatTimeout{
 					//DPrintf("LeaderAction leader %d send hb at term %d \n", rf.me, term)
+					rf.mu.Unlock()
 					go rf.SendHeartBeat()
+				}else{
+					rf.mu.Unlock()
 				}
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -71,6 +77,8 @@ func  (rf *Raft) LeaderAction (){
 
 func (rf *Raft) SendHeartBeat(){
 	// update lastSendTime
+	rf.mu.Lock()
 	rf.lastSendTime = time.Now().UnixNano()
+	rf.mu.Unlock()
 	rf.SendAppendEntriesToAll("HeartBeat")
 }

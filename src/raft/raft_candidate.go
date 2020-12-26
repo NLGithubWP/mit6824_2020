@@ -18,7 +18,6 @@ func (rf *Raft) CandidateAction() {
 	// vote: how many vote got
 	vote := 1
 	rf.persist()
-	rf.mu.Unlock()
 	// 3. Reset election timer
 	rf.ResetElectionTimer()
 
@@ -26,6 +25,7 @@ func (rf *Raft) CandidateAction() {
 		"%d, there are %d peers: \n", rf.me, rf.CurrentTerm, vote, len(rf.peers))
 	DPrintf("[CandidateAction] : server %d reset timeout to %d  \n",
 		rf.me, rf.electionTimeout)
+	rf.mu.Unlock()
 
 	// 4. Send requestVote RPCS to all servers
 	go rf.boardCaseRequestVote(&vote)
@@ -35,10 +35,12 @@ func (rf *Raft) boardCaseRequestVote(vote *int) {
 	g := sync.WaitGroup{}
 
 	args := new(RequestVoteArgs)
+	rf.mu.Lock()
 	args.Term = rf.CurrentTerm
 	args.CandidateId = rf.me
 	args.LastLogIndex = len(rf.log) - 1
 	args.LastLogTerm = rf.log[args.LastLogIndex].Term
+	rf.mu.Unlock()
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
@@ -46,7 +48,9 @@ func (rf *Raft) boardCaseRequestVote(vote *int) {
 		}
 		g.Add(1)
 		k := i
+		rf.mu.Lock()
 		DPrintf("[CandidateAction] : %d send to %d Term %d \n", rf.me, k, rf.CurrentTerm)
+		rf.mu.Unlock()
 		go rf.requestVote(vote, &g, args, k)
 	}
 	g.Wait()
@@ -86,7 +90,7 @@ func (rf *Raft) requestVote(vote *int, g *sync.WaitGroup, args *RequestVoteArgs,
 		}
 
 	} else if reply.VoteGranted == true {
-
+		rf.mu.Lock()
 		*vote += 1
 		DPrintf("[CandidateAction] : %d sendRequestVote to %d succeed, got %d vote at term %d \n",
 			rf.me, k, *vote, rf.CurrentTerm)
@@ -100,5 +104,6 @@ func (rf *Raft) requestVote(vote *int, g *sync.WaitGroup, args *RequestVoteArgs,
 				rf.persist()
 			}
 		}
+		rf.mu.Unlock()
 	}
 }

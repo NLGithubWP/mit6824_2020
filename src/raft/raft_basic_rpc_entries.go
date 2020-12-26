@@ -202,8 +202,8 @@ func (rf *Raft) SendAppendEntriesToAll(name string) {
 
 			if reply.Success == true {
 				// 如果成功
-				*nReplica++
 				rf.mu.Lock()
+				*nReplica++
 				rf.NextIndex[i] = len(rf.log)
 				rf.MatchIndex[i] = len(rf.log) - 1
 				DPrintf("[AppendEntries_%s]: Server %d boardCast appendEntry to server %d succeed, Update NextIndex to %v and MatchIndex to %v at term %d ", name, rf.me, i, rf.NextIndex, rf.MatchIndex, CurrentTerm)
@@ -214,12 +214,10 @@ func (rf *Raft) SendAppendEntriesToAll(name string) {
 
 					rf.CommitIndex = N
 					DPrintf("[AppendEntries_%s]: Server %d update commitIndex to %d at term %d ", name, rf.me, rf.CommitIndex, CurrentTerm)
-					rf.mu.Unlock()
 					rf.applyCond.Broadcast()
-				} else {
-					rf.mu.Unlock()
 				}
 				rf.persist()
+				rf.mu.Unlock()
 				return
 			} else {
 				// term 过期， back to follower
@@ -230,15 +228,16 @@ func (rf *Raft) SendAppendEntriesToAll(name string) {
 					rf.BackToFollower(reply.Term)
 					rf.ResetElectionTimer()
 					rf.mu.Unlock()
+					return
 				} else {
-					if CurrentTerm > reply.Term {
-						DPrintf("[AppendEntries_%s]: Server %d term %d expired, return", name, rf.me, CurrentTerm)
-						rf.mu.Unlock()
-						return
-					}
-					rf.mu.Unlock()
+					//if CurrentTerm > reply.Term {
+					//	DPrintf("[AppendEntries_%s]: Server %d term %d expired, return", name, rf.me, CurrentTerm)
+					//	rf.mu.Unlock()
+					//	return
+					//}
 					rf.NextIndex[i] -= 1
 					DPrintf("[AppendEntries_%s]: Server %d term %d expired, consistent check failed, retry with nextIndex %d", name, rf.me, CurrentTerm, rf.NextIndex[i])
+					rf.mu.Unlock()
 					goto retry
 				}
 			}

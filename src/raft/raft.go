@@ -185,9 +185,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (2B).
 	if term, isLeader = rf.GetState(); isLeader {
 		// index: 将要插入的entry应该在的位置
+		rf.mu.Lock()
 		index = len(rf.log)
 		entry := Entry{term, command}
-		rf.mu.Lock()
 		rf.log = append(rf.log, &entry)
 		rf.lastSendTime = time.Now().UnixNano()
 		rf.persist()
