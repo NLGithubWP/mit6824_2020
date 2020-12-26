@@ -65,8 +65,8 @@ func (rf *Raft) AppendEntries(args *AppendEntries, reply *AppendEntriesReply)  {
 			rf.ResetElectionTimer()
 		}
 
-		//2. Reply false if log doesn’t contain an entry at prevLogIndex
-		//	 whose term matches prevLogTerm (§5.3)
+		//  2. Reply false if log doesn’t contain an entry at prevLogIndex
+		//	whose term matches prevLogTerm (§5.3)
 
 		if args.PrevLogIndex <= len(rf.log)-1{
 			// 一致性检查失败
@@ -75,16 +75,47 @@ func (rf *Raft) AppendEntries(args *AppendEntries, reply *AppendEntriesReply)  {
 					args.LeaderId, rf.me, rf.log[args.PrevLogIndex].Term, args.PrevLogTerm)
 				success = false
 			}else{
+				/*
+				Another issue many had (often immediately after fixing the issue above), was that, upon receiving a heartbeat,
+				they would truncate the follower’s log following prevLogIndex, and then append any entries included in
+				the AppendEntries arguments. This is also not correct. We can once again turn to Figure 2:
+
+				If an existing entry conflicts with a new one (same index but different terms), delete the existing entry and
+				all that follow it. The if here is crucial. If the follower has all the entries the leader sent,
+				the follower MUST NOT truncate its log. Any elements following the entries sent by the leader MUST be kept.
+				This is because we could be receiving an outdated AppendEntries RPC from the leader, and truncating the log
+				would mean “taking back” entries that we may have already told the leader that we have in our log.
+				*/
+
+				// 这样也能通过测试，但是不要这么做最好
+				//rf.log = rf.log[:args.PrevLogIndex+1]
+
+				/*
+					3. If an existing entry conflicts with a new one (same index
+					but different terms), delete the existing entry and all that
+					follow it (§5.3)
+				 */
+
 				DPrintf("[AppendEntries]: server %d send to %d, prevLogIndex term  %d is match %d \n",
 					args.LeaderId, rf.me, rf.log[args.PrevLogIndex].Term, args.PrevLogTerm)
-				//fmt.Println()
-				//spew.Printf("[AppendEntries]: server %d send to %d, previous log are: \n%v \n",args.LeaderId, rf.me,  rf.log)
 
-				rf.log = rf.log[:args.PrevLogIndex+1]
-				//fmt.Printf("[AppendEntries]: server %d send to %d, length are %d: \n", args.LeaderId, rf.me, args.PrevLogIndex)
-				//spew.Printf("[AppendEntries]: server %d send to %d, after log are :\n%v \n",args.LeaderId, rf.me,  rf.log)
-				//spew.Printf("[AppendEntries]: server %d send to %d, entries are : \n%v\n", args.LeaderId, rf.me, args.Entries)
-				//fmt.Println()
+				for i:= 0; i<len(args.Entries);i++{
+					index := args.PrevLogIndex + i + 1
+					if index >= len(rf.log){
+						args.Entries = args.Entries[i:]
+						rf.log = append(rf.log, args.Entries...)
+						break
+					}else if index < len(rf.log){
+						// check if conflict
+						if  rf.log[index].Term != args.Entries[i].Term{
+							rf.log = rf.log[:index]
+							args.Entries = args.Entries[i:]
+							//  4. Append any new entries not already in the log
+							rf.log = append(rf.log, args.Entries...)
+							break
+						}
+					}
+				}
 				success = true
 			}
 		} else{
@@ -107,9 +138,6 @@ func (rf *Raft) AppendEntries(args *AppendEntries, reply *AppendEntriesReply)  {
 	if success{
 
 		rf.ResetElectionTimer()
-
-		//  4. Append any new entries not already in the log
-		rf.log = append(rf.log, args.Entries...)
 
 		//	5. If leaderCommit > commitIndex, set commitIndex =
 		//	min(leaderCommit, index of last new entry)
@@ -134,10 +162,6 @@ func (rf *Raft) AppendEntries(args *AppendEntries, reply *AppendEntriesReply)  {
 func (rf *Raft) SendAppendEntriesToAll(name string){
 	nReplica := 1
 	majority := len(rf.peers)/2+1
-
-	//fmt.Printf("\n")
-	//spew.Printf("[AppendEntries]: server %d SendAppendEntries, current logs are :\n%v \n", rf.me,  rf.log)
-	//fmt.Printf("\n")
 
 	CurrentTerm := rf.CurrentTerm
 	for i :=0;i<len(rf.peers);i++{
