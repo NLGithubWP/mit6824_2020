@@ -83,6 +83,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 		//  If RPC request or response contains term T > currentTerm:
 		//  set currentTerm = T, convert to follower (§5.1)
+		rf.mu.Lock()
 		if rf.CurrentTerm < args.Term{
 			DPrintf("[RequestVote]: server %d Convert to follower, args.Term %d, currentTerm: %d \n",
 				rf.me, args.Term,rf.CurrentTerm,
@@ -93,7 +94,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			//DPrintf("[RequestVote]: %d,Term %d,candidate's term %d, not back to follower \n",
 			//	rf.me , rf.CurrentTerm, args.Term)
 		}
-
+		rf.mu.Unlock()
 		/*
 			2. Raft determines which of two logs is more up-to-date
 			by comparing the index and term of the last entries in the

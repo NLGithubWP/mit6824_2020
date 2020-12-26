@@ -210,15 +210,20 @@ func (rf *Raft) SendAppendEntriesToAll(name string){
 					return
 				}else{
 					// term 过期， back to follower
+					rf.mu.Lock()
+
 					if CurrentTerm < reply.Term{
 						DPrintf("[AppendEntries_%s]: Server %d term %d expired, back to follower,reset timeout",name, rf.me, CurrentTerm)
 						rf.BackToFollower(reply.Term)
 						rf.ResetElectionTimer()
+						rf.mu.Unlock()
 					}else{
 						if CurrentTerm >reply.Term{
 							DPrintf("[AppendEntries_%s]: Server %d term %d expired, return", name,rf.me, CurrentTerm)
+							rf.mu.Unlock()
 							return
 						}
+						rf.mu.Unlock()
 						rf.NextIndex[i] -= 1
 						DPrintf("[AppendEntries_%s]: Server %d term %d expired, consistent check failed, retry with nextIndex %d", name,rf.me, CurrentTerm, rf.NextIndex[i])
 						goto retry
