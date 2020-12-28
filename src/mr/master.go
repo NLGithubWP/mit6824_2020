@@ -1,14 +1,27 @@
 package mr
 
-import "log"
-import "net"
-import "os"
-import "net/rpc"
-import "net/http"
+import (
+	"log"
+	"net"
+	"net/http"
+	"net/rpc"
+	"os"
+	"sync"
+)
 
 
 type Master struct {
 	// Your definitions here.
+	sync.Mutex
+	M  int
+	R  int
+
+	MapFiles []string
+	ReduceFiles [][]string
+	MapTaskStatus map[string]int
+	ReduceTaskStatus map[string]int
+
+	IsDone  *sync.Cond
 
 }
 
@@ -50,6 +63,10 @@ func (m *Master) Done() bool {
 
 	// Your code here.
 
+	m.Lock()
+	m.IsDone.Wait()
+	ret = true
+	m.Unlock()
 
 	return ret
 }
@@ -61,9 +78,19 @@ func (m *Master) Done() bool {
 //
 func MakeMaster(files []string, nReduce int) *Master {
 	m := Master{}
-
+	DPrintf("[Master]: MakeMaster..., file length: %d, eg: %s\n", len(files), files[0])
 	// Your code here.
 
+	m.M = len(files)
+	m.R = nReduce
+
+	m.MapFiles = files
+	m.ReduceFiles = make([][]string, nReduce)
+
+	m.MapTaskStatus = make(map[string]int)
+	m.ReduceTaskStatus = make(map[string]int)
+
+	m.IsDone = sync.NewCond(&m)
 
 	m.server()
 	return &m

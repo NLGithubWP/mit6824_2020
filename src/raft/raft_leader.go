@@ -27,8 +27,6 @@ func  (rf *Raft) LeaderAction (){
 			The leader maintains a nextIndex for each follower,
 			which is the index of the next log entry the leader will
 			send to that follower.
-
-
 	 */
 	go func(){
 

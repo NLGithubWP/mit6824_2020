@@ -39,7 +39,7 @@ func main() {
 	for _, filename := range os.Args[2:] {
 		file, err := os.Open(filename)
 		if err != nil {
-			log.Fatalf("cannot open %v", filename)
+			log.Fatalf("[mrsequential]: cannot open %v", filename)
 		}
 		content, err := ioutil.ReadAll(file)
 		if err != nil {
