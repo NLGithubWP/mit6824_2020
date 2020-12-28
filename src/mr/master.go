@@ -13,28 +13,17 @@ import (
 type Master struct {
 	// Your definitions here.
 	sync.Mutex
-	M  int
-	R  int
+	M  int     							// number of map tasks
+	R  int	   							// number of reduce tasks
 
-	MapFiles []string
-	ReduceFiles [][]string
-	MapTaskStatus map[string]int
-	ReduceTaskStatus map[string]int
+	MapFiles []string    				// data splits
+	ReduceFiles [][]string				// each element have value of the same key
+	MapTaskStatus map[string]int		// status of each map task
+	ReduceTaskStatus map[string]int		// status of each reduce task
 
-	IsDone  *sync.Cond
+	IsDone  *sync.Cond					// if all task are done
 
-}
-
-// Your code here -- RPC handlers for the worker to call.
-
-//
-// an example RPC handler.
-//
-// the RPC argument and reply types are defined in rpc.go.
-//
-func (m *Master) Example(args *ExampleArgs, reply *ExampleReply) error {
-	reply.Y = args.X + 1
-	return nil
+	workers   []int						// each element is the status of worker
 }
 
 
@@ -91,6 +80,8 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m.ReduceTaskStatus = make(map[string]int)
 
 	m.IsDone = sync.NewCond(&m)
+
+	m.workers = make([]int, 0)
 
 	m.server()
 	return &m

@@ -2,6 +2,7 @@ package mr
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"sort"
 	"time"
@@ -46,32 +47,24 @@ func Worker(
 	reducef ReduceF,
 	) {
 
-	// Your worker implementation here.
-
-	// uncomment to send the Example RPC to the master.
-	// CallExample()
+	WorkerId := WorkerDefaultIndex
 
 	for {
 		args := TaskArgs{}
 		reply := TaskReply{}
+		args.WorkerId = WorkerId
+
 		err := call("Master.Schedule", &args, &reply)
 		if err != true {
 			DPrintf("[Worker]: Call Master Schedule error\n")
 		}
-
-		//DPrintf("[Worker]: reply infos, reply: " +
-		//	"reply.IsFinish: %v, " +
-		//	"reply.Phase: %s, " +
-		//	"reply.nReduce: %s, " +
-		//	"reply.X: %s, " +
-		//	"\n",
-		//	reply.IsFinish, reply.Phase, reply.RTasks, reply.X)
 
 		// if master return isFinish, break the loop
 		if reply.IsFinish==true{
 			DPrintf("[Worker]: TaskDone. quit\n")
 			return
 		}
+		WorkerId = reply.WorkerId
 		switch reply.Phase {
 		case MapPhrase:
 			execMap(&reply, mapf)
@@ -86,31 +79,7 @@ func Worker(
 		thread, so the fact that one handler is waiting won't prevent the master from processing other RPCs.
 		 */
 		time.Sleep(time.Millisecond*10)
-
 	}
-}
-
-//
-// example function to show how to make an RPC call to the master.
-//
-// the RPC argument and reply types are defined in rpc.go.
-//
-func CallExample() {
-
-	// declare an argument structure.
-	args := ExampleArgs{}
-
-	// fill in the argument(s).
-	args.X = 99
-
-	// declare a reply structure.
-	reply := ExampleReply{}
-
-	// send the RPC request, wait for the reply.
-	call("Master.Example", &args, &reply)
-
-	// reply.Y should be 100.
-	fmt.Printf("reply.Y %v\n", reply.Y)
 }
 
 //
@@ -123,7 +92,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	sockname := masterSock()
 	c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
-		log.Fatal("dialing:", err)
+		log.Fatal("dialing:", rpcname, err)
 	}
 	defer c.Close()
 
@@ -137,25 +106,44 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 }
 
 func execMap(reply *TaskReply, mapf MapF){
-	DPrintf("[Worker]: assigned Map, partitionF, x %d and nReduce %d, \n", reply.X, reply.RTasks)
+	//DPrintf("[Worker]: Assigned Map, partitionF, x %d and nReduce %d, \n", reply.X, reply.RTasks)
 
 	filename := reply.FileName[0]
 	content := readFile(filename)
 	kva := mapf(filename, content)
 
-	files := partitionF(kva, reply.X, reply.RTasks)
+	tmpFiles, realFiles := partitionF(kva, reply.X, reply.RTasks)
 
-	xargs := TaskResArgs{}
+	xargs := TaskReportArgs{}
+
+	xargs.Phase = reply.Phase
+	xargs.WorkerId = reply.WorkerId
 	xargs.InputFile = filename
-	xargs.ReturnFile = files
-	xreply := TaskResReply{}
-	err := call("Master.MapStatusReport", &xargs, &xreply)
+	xargs.IntermediateFiles = realFiles
+	// return the real nameFiles,
+	xreply := TaskReportReply{}
+	err := call("Master.Collect", &xargs, &xreply)
 	if err != true {
-		DPrintf("[Worker]: Call MapStatusReport error\n")
+		DPrintf("[Worker]: After Reduce, Call Master.Collect error\n")
 	}
+
+	//DPrintf("[Worker]: reply.Accept: %s \n", xreply.Accept)
+	if xreply.Accept == true{
+		for i, v := range tmpFiles{
+			//DPrintf("[Worker]: Renaming %s to %s\n", v, realFiles[i])
+			err2 := os.Rename(v, realFiles[i])
+			if err2 != nil {
+				DPrintf("[Worker]: Rename error: %s\n", err2)
+				panic(err2)
+			}
+		}
+	}else{
+		DPrintf("[Worker]: Not Renaming %v \n", tmpFiles)
+	}
+
 }
 
-func partitionF(kva []KeyValue, x, nReduce int) (files []string) {
+func partitionF(kva []KeyValue, x, nReduce int) (tmpFiles, realFiles []string) {
 	/*
 		The map part of your worker can use the ihash(key) function (in worker.go) to pick the reduce task for a
 		given key.
@@ -173,15 +161,22 @@ func partitionF(kva []KeyValue, x, nReduce int) (files []string) {
 	}
 	for i, v := range intermediate{
 		sort.Sort(ByKey(v))
-		oname := fmt.Sprintf(BaseDir+"mr-%d-%d", x, i)
-		toJsonFile(oname, v)
-		files = append(files, oname)
+
+		f, e :=ioutil.TempFile("./", "tmpFile---")
+		if e!=nil{
+			panic(e)
+		}
+		tmpName := f.Name()
+		realName := fmt.Sprintf(BaseDir+"mr-%d-%d", x, i)
+		toJsonFile(tmpName, v)
+		tmpFiles = append(tmpFiles, tmpName)
+		realFiles = append(realFiles, realName)
 	}
-	return files
+	return tmpFiles, realFiles
 }
 
 func execReduce(reply *TaskReply,  reducef ReduceF){
-	DPrintf("[Worker]: assigned Reduce \n")
+	//DPrintf("[Worker]: Assigned Reduce \n")
 	filenames := reply.FileName
 
 	var intermediate []KeyValue
@@ -189,23 +184,45 @@ func execReduce(reply *TaskReply,  reducef ReduceF){
 		kva := Json2String(fname)
 		intermediate = append(intermediate, kva...)
 	}
-	reduceHelper(intermediate, reducef, reply.Y)
+	//DPrintf("[Worker]: Reduce Args: %v \n", intermediate)
+	tmpFiles, realFiles := reduceHelper(intermediate, reducef, reply.Y)
 
-	xargs := TaskResArgs{}
+	xargs := TaskReportArgs{}
+	xargs.Phase = reply.Phase
+	xargs.WorkerId = reply.WorkerId
 	xargs.InputFile = filenames[0]
-	xreply := TaskResReply{}
-	err := call("Master.ReduceStatusReport", &xargs, &xreply)
+	xreply := TaskReportReply{}
+	err := call("Master.Collect", &xargs, &xreply)
 	if err != true {
-		DPrintf("[Worker]: Call Master ReduceStatusReport error\n")
+		DPrintf("[Worker]: After Reduce, Call Master Collect error\n")
 	}
+
+	//DPrintf("[Worker]: reply.Accept: %s \n", xreply.Accept)
+	if xreply.Accept == true{
+		for i, v := range tmpFiles{
+			//DPrintf("[Worker]: Renaming %s to %s\n", v, realFiles[i])
+			err2 := os.Rename(v, realFiles[i])
+			if err2 != nil {
+				DPrintf("[Worker]: Rename error: %s\n", err2)
+				panic(err2)
+			}
+		}
+	}else{
+		DPrintf("[Worker]: Not Renaming %v \n", tmpFiles)
+	}
+
 }
 
-func reduceHelper(intermediate []KeyValue, reducef ReduceF, y int){
+func reduceHelper(intermediate []KeyValue, reducef ReduceF, y int) (tmpFiles, realFiles []string) {
 
 	sort.Sort(ByKey(intermediate))
 
-	oname := fmt.Sprintf(BaseDir+"mr-out-%d",y)
-	ofile, _ := os.Create(oname)
+	ofile, e :=ioutil.TempFile("./", "outf---")
+	if e!=nil{
+		panic(e)
+	}
+	tmpName := ofile.Name()
+	realName := fmt.Sprintf(BaseDir+"mr-out-%d",y)
 
 	//
 	// call Reduce on each distinct key in intermediate[],
@@ -230,4 +247,7 @@ func reduceHelper(intermediate []KeyValue, reducef ReduceF, y int){
 	}
 
 	ofile.Close()
+	tmpFiles = append(tmpFiles, tmpName)
+	realFiles = append(realFiles, realName)
+	return tmpFiles, realFiles
 }

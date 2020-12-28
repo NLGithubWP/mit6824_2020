@@ -2,23 +2,13 @@ package mr
 
 import "time"
 
-func (m *Master) ReduceStatusReport(args *TaskResArgs, reply *TaskResReply) error {
-	m.Lock()
-	if v,ok:=m.ReduceTaskStatus[args.InputFile]; ok && v == StatusBegin{
-		m.ReduceTaskStatus[args.InputFile] = StatusFinish
-	}
-	m.Unlock()
-
-	return nil
-}
-
-
-func (m *Master) reduceTaskMonitor(FileName []string)  {
+func (m *Master) reduceTaskMonitor(FileName []string, workerId int)  {
 
 	for i := 1; i <= 10; i++ {
 		time.Sleep(time.Second)
 		m.Lock()
-		if v, ok := m.MapTaskStatus[FileName[0]]; ok && v==StatusFinish{
+		if v, ok := m.ReduceTaskStatus[FileName[0]]; ok && v==StatusFinish{
+			DPrintf("[Worker]: one Reduce Task Finished\n")
 			m.Unlock()
 			return
 		}
@@ -26,17 +16,17 @@ func (m *Master) reduceTaskMonitor(FileName []string)  {
 	}
 
 	m.Lock()
+	DPrintf("[Worker]: one Reduce Task Failed, ready to be re-assigned\n")
 	m.ReduceFiles = append(m.ReduceFiles, FileName)
-	m.ReduceTaskStatus[FileName[0]] = StatusStopped
+	m.workers[workerId] = WorkerDelay
 	m.Unlock()
 	return
 }
 
 func (m *Master) isReduceFinish() bool{
 
-
 	// if the reduce task have not begin yet
-	if len(m.ReduceTaskStatus) == 0{
+	if len(m.ReduceTaskStatus) < m.R{
 		return false
 	}
 

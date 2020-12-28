@@ -8,17 +8,18 @@ import (
 	"strings"
 )
 
-// Debugging
-const Debug = 1
-//const BaseDir = "mr-tmp/"
-const BaseDir = ""
+const (
+	MapPhrase = "map"
+	ReducePhrase = "reduce"
 
-func DPrintf(format string, a ...interface{}) (n int, err error) {
-	if Debug > 0 {
-		log.Printf(format, a...)
-	}
-	return
-}
+	StatusFinish  = 2
+
+	WorkerDefaultIndex = -1
+
+	WorkerNormal = 2
+	WorkerDelay = 3
+)
+
 
 
 
@@ -41,7 +42,6 @@ func toJsonFile(filename string, kvs []KeyValue){
 		a way that can be correctly read back during reduce tasks. One possibility is to use Go's
 		encoding/json package. To write key/value pairs to a JSON file:
 	*/
-
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("[Worker]: Cannot create %v, err: %s", filename, err)

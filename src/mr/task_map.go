@@ -2,19 +2,9 @@ package mr
 
 import "time"
 
-func (m *Master) MapStatusReport(args *TaskResArgs, reply *TaskResReply) error {
-	m.Lock()
-	if v,ok := m.MapTaskStatus[args.InputFile]; ok && v == StatusBegin{
-		m.MapTaskStatus[args.InputFile] = StatusFinish
-		for i := 0; i<m.R;i++{
-			m.ReduceFiles[i] = append(m.ReduceFiles[i], args.ReturnFile[i])
-		}
-	}
-	m.Unlock()
-	return nil
-}
 
-func (m *Master) mapTaskMonitor(FileName string)  {
+
+func (m *Master) mapTaskMonitor(FileName string, workerId int)  {
 	/*
 		The master can't reliably distinguish between crashed workers,
 		workers that are alive but have stalled for some reason, and workers
@@ -27,6 +17,7 @@ func (m *Master) mapTaskMonitor(FileName string)  {
 		time.Sleep(time.Second)
 		m.Lock()
 		if v, ok := m.MapTaskStatus[FileName]; ok && v==StatusFinish{
+			DPrintf("[Worker]: one Map Task Finished\n")
 			m.Unlock()
 			return
 		}
@@ -34,14 +25,20 @@ func (m *Master) mapTaskMonitor(FileName string)  {
 	}
 
 	m.Lock()
+	DPrintf("[Worker]: one Map Task Failed, ready to be re-assigned\n")
 	m.MapFiles = append(m.MapFiles, FileName)
-	m.MapTaskStatus[FileName] = StatusStopped
+	m.workers[workerId] = WorkerDelay
 	m.Unlock()
 	return
 }
 
 
 func (m *Master) isMapFinish() bool{
+
+	// number of task is less than data slices
+	if len(m.MapTaskStatus) < m.M{
+		return false
+	}
 
 	for _, v:= range m.MapTaskStatus{
 		if v==StatusFinish{
