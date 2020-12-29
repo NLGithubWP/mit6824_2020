@@ -15,5 +15,7 @@ divide the whole raft projects into multi files, making it more easier to manage
     - [x] Part 2A Leader Selection: Pass
     - [x] Part 2B Consistent Log: Pass
     - [x] Part 2C Persist: Pass  
+    
+    ![Alt text](https://github.com/naili-xing/mit6824_2020/blob/master/imgs/raft.png)
    
     
