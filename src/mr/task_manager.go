@@ -22,7 +22,7 @@ type TaskReply struct {
 type TaskReportArgs struct {
 	Phase	  string			// map or reduce
 	WorkerId  int				// workerId, confirmed by master
-	InputFile string
+	SplitId int
 	IntermediateFiles []string
 }
 
@@ -58,27 +58,39 @@ func (m *Master) Schedule(args *TaskArgs, reply *TaskReply) error {
 
 	}else if len(m.MapFiles) != 0  {
 
+		var splitId int
+		var splitFile string
+		selectFile := m.MapFiles[0]
+		for k, v := range selectFile{
+			splitId = k
+			splitFile = v
+		}
+		if len(splitFile) == 0{
+			DPrintf("[Master]: No file found" +
+				"MapFiles: %d\n", m.MapFiles)
+
+			panic("No file found")
+		}
 		reply.IsFinish=false
 		reply.Phase=MapPhrase
-		// a single file to be processed in map task
-		reply.FileName = []string{m.MapFiles[0]}
 		reply.RTasks = m.R
-		reply.X = m.M - len(m.MapFiles)
+		reply.X = splitId
+		reply.FileName = []string{splitFile}
 
-		DPrintf("[Master]: Schedule Map to Worker:" +
+		DPrintf("[Master]: Schedule Map to Worker:-->" +
+			"reply.WorkerId: %d, " +
+			"reply.X: %d, " +
+			"reply.FileName: %s, " +
 			"reply.IsFinish: %v, " +
 			"reply.Phase: %s, " +
 			"reply.RTasks: %d, " +
-			"reply.X: %d, " +
-			"reply.WorkerId: %d, " +
 			"\n",
-			reply.IsFinish, reply.Phase, reply.RTasks, reply.X, reply.WorkerId)
+			reply.WorkerId, reply.X, reply.FileName, reply.IsFinish, reply.Phase, reply.RTasks)
 
-		selectFile := m.MapFiles[0]
 		m.MapFiles = m.MapFiles[1:]
 		m.workers[reply.WorkerId] = WorkerNormal
 		defer func(){
-			go m.mapTaskMonitor(selectFile, reply.WorkerId)
+			go m.mapTaskMonitor(splitId, splitFile, reply.WorkerId)
 		}()
 		return nil
 
@@ -87,27 +99,35 @@ func (m *Master) Schedule(args *TaskArgs, reply *TaskReply) error {
 			//DPrintf("[Master]: Map Task is not finished... \n")
 			return nil
 		}
+
+		var reduceId int
+		var reduceFiles []string
+		selectFile := m.ReduceFiles[0]
+		for k, v := range selectFile{
+			reduceId = k
+			reduceFiles = v
+		}
+
 		reply.IsFinish=false
 		reply.Phase=ReducePhrase
-		// a list of files to be reduced
-		reply.FileName = m.ReduceFiles[0]
-		reply.Y = m.R - len(m.ReduceFiles)
+		reply.Y = reduceId
+		reply.FileName = reduceFiles
 
-		DPrintf("[Master]: Schedule Reduce to Worker:" +
+		DPrintf("[Master]: Schedule Reduce to Worker:-->" +
+			"reply.WorkerId: %d, " +
+			"reply.Y: %d, " +
+			"reply.FileName: %s, " +
 			"reply.IsFinish: %v, " +
 			"reply.Phase: %s, " +
 			"reply.RTasks: %d, " +
-			"reply.Y: %d, " +
-			"reply.WorkerId: %d, " +
 			"\n",
-			reply.IsFinish, reply.Phase, reply.RTasks, reply.Y, reply.WorkerId)
+			reply.WorkerId, reply.Y, reply.FileName, reply.IsFinish, reply.Phase, reply.RTasks)
 
 		// use first filename in file name array as index
-		selectFile := m.ReduceFiles[0]
 		m.ReduceFiles = m.ReduceFiles[1:]
 		m.workers[reply.WorkerId] = WorkerNormal
 		defer func(){
-			go m.reduceTaskMonitor(selectFile, reply.WorkerId)
+			go m.reduceTaskMonitor(reduceId, reduceFiles, reply.WorkerId)
 		}()
 		return nil
 	}
@@ -119,23 +139,29 @@ func (m *Master) Collect(args *TaskReportArgs, reply *TaskReportReply) error {
 	defer m.Unlock()
 	if m.workers[args.WorkerId] == WorkerDelay{
 		reply.Accept = false
-		//DPrintf("[Worker]: Map Task Report Status MisMatch: %s, %v \n", args.InputFile, m.MapTaskStatus)
+
+		DPrintf("[Master]: Refuse to accept, as worker %d is delay: \n", args.WorkerId)
+
 	}else{
 		reply.Accept = true
 
 		if args.Phase == MapPhrase{
-			m.MapTaskStatus[args.InputFile] = StatusFinish
+			m.MapTaskStatus[args.SplitId] = StatusFinish
 
 			for i:=0; i<m.R; i++{
-				m.ReduceFiles[i] = append(m.ReduceFiles[i], args.IntermediateFiles[i])
+
+				if m.ReduceFiles[i] == nil{
+					panic("ReduceFiles init error")
+				}
+				m.ReduceFiles[i][i] = append(m.ReduceFiles[i][i], args.IntermediateFiles[i])
 			}
 		}else if args.Phase == ReducePhrase{
-			m.ReduceTaskStatus[args.InputFile] = StatusFinish
+			m.ReduceTaskStatus[args.SplitId] = StatusFinish
 		}else{
 			panic("Not Map Or Reduce")
 		}
 
-		//DPrintf("[Worker]: Map Task Report Status Match: %s \n", v)
+		DPrintf("[Master]: Agree to accept, as worker %d is finished: \n", args.WorkerId)
 	}
 	return nil
 }

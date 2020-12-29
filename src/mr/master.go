@@ -16,10 +16,10 @@ type Master struct {
 	M  int     							// number of map tasks
 	R  int	   							// number of reduce tasks
 
-	MapFiles []string    				// data splits
-	ReduceFiles [][]string				// each element have value of the same key
-	MapTaskStatus map[string]int		// status of each map task
-	ReduceTaskStatus map[string]int		// status of each reduce task
+	MapFiles []map[int]string    		// data splits eg: [[id1: file1], [id2: file2],]
+	ReduceFiles []map[int][]string		// [ [id1: [f1,f2,f3]], [id2: [f1,f2,f3]] ]
+	MapTaskStatus map[int]int			// status of each map task
+	ReduceTaskStatus map[int]int		// status of each reduce task
 
 	IsDone  *sync.Cond					// if all task are done
 
@@ -73,11 +73,20 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m.M = len(files)
 	m.R = nReduce
 
-	m.MapFiles = files
-	m.ReduceFiles = make([][]string, nReduce)
+	m.MapFiles = make([]map[int]string, len(files))
 
-	m.MapTaskStatus = make(map[string]int)
-	m.ReduceTaskStatus = make(map[string]int)
+	for i, f:= range files{
+		m.MapFiles[i] = map[int]string{i:f}
+	}
+
+	m.ReduceFiles = make([]map[int][]string, nReduce)
+
+	for i, _ := range m.ReduceFiles{
+		m.ReduceFiles[i] = make(map[int][]string)
+	}
+
+	m.MapTaskStatus = make(map[int]int)
+	m.ReduceTaskStatus = make(map[int]int)
 
 	m.IsDone = sync.NewCond(&m)
 

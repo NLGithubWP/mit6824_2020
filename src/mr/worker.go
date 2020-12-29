@@ -56,12 +56,12 @@ func Worker(
 
 		err := call("Master.Schedule", &args, &reply)
 		if err != true {
-			DPrintf("[Worker]: Call Master Schedule error\n")
+			DPrintf("[Worker]: Worker %d Call Master Schedule error\n", WorkerId)
 		}
 
 		// if master return isFinish, break the loop
 		if reply.IsFinish==true{
-			DPrintf("[Worker]: TaskDone. quit\n")
+			DPrintf("[Worker]: Worker %d TaskDone. quit\n", WorkerId)
 			return
 		}
 		WorkerId = reply.WorkerId
@@ -106,44 +106,45 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 }
 
 func execMap(reply *TaskReply, mapf MapF){
-	//DPrintf("[Worker]: Assigned Map, partitionF, x %d and nReduce %d, \n", reply.X, reply.RTasks)
+	DPrintf("[Worker]: Assigned Map, partitionF, x %d and nReduce %d, \n", reply.X, reply.RTasks)
 
 	filename := reply.FileName[0]
 	content := readFile(filename)
 	kva := mapf(filename, content)
 
-	tmpFiles, realFiles := partitionF(kva, reply.X, reply.RTasks)
+	tmpFiles, realFiles := partitionF(kva, reply.X, reply.RTasks, reply.WorkerId, filename)
 
 	xargs := TaskReportArgs{}
 
 	xargs.Phase = reply.Phase
 	xargs.WorkerId = reply.WorkerId
-	xargs.InputFile = filename
+	xargs.SplitId = reply.X
 	xargs.IntermediateFiles = realFiles
 	// return the real nameFiles,
 	xreply := TaskReportReply{}
+	DPrintf("[Worker]: Worker %d After Map, Call Master.Collect to report status\n", reply.WorkerId)
 	err := call("Master.Collect", &xargs, &xreply)
 	if err != true {
-		DPrintf("[Worker]: After Reduce, Call Master.Collect error\n")
+		DPrintf("[Worker]: Worker %d After Map, Call Master.Collect error\n", reply.WorkerId)
 	}
 
 	//DPrintf("[Worker]: reply.Accept: %s \n", xreply.Accept)
 	if xreply.Accept == true{
 		for i, v := range tmpFiles{
-			//DPrintf("[Worker]: Renaming %s to %s\n", v, realFiles[i])
+			DPrintf("[Worker]: Worker %d Renaming %s to %s\n", reply.WorkerId, v, realFiles[i])
 			err2 := os.Rename(v, realFiles[i])
 			if err2 != nil {
-				DPrintf("[Worker]: Rename error: %s\n", err2)
+				DPrintf("[Worker]: Worker %d Rename error: %s\n", reply.WorkerId, err2)
 				panic(err2)
 			}
 		}
 	}else{
-		DPrintf("[Worker]: Not Renaming %v \n", tmpFiles)
+		DPrintf("[Worker]: Worker %d Not Renaming %v \n", reply.WorkerId, tmpFiles)
 	}
 
 }
 
-func partitionF(kva []KeyValue, x, nReduce int) (tmpFiles, realFiles []string) {
+func partitionF(kva []KeyValue, x, nReduce, workerId int, filename string) (tmpFiles, realFiles []string) {
 	/*
 		The map part of your worker can use the ihash(key) function (in worker.go) to pick the reduce task for a
 		given key.
@@ -172,6 +173,7 @@ func partitionF(kva []KeyValue, x, nReduce int) (tmpFiles, realFiles []string) {
 		tmpFiles = append(tmpFiles, tmpName)
 		realFiles = append(realFiles, realName)
 	}
+	DPrintf("[Worker]: Worker %d process split %s Saving %v to file: %v \n", workerId, filename, intermediate, tmpFiles)
 	return tmpFiles, realFiles
 }
 
@@ -185,35 +187,38 @@ func execReduce(reply *TaskReply,  reducef ReduceF){
 		intermediate = append(intermediate, kva...)
 	}
 	//DPrintf("[Worker]: Reduce Args: %v \n", intermediate)
-	tmpFiles, realFiles := reduceHelper(intermediate, reducef, reply.Y)
+	tmpFiles, realFiles, content := reduceHelper(intermediate, reducef, reply.Y)
 
 	xargs := TaskReportArgs{}
 	xargs.Phase = reply.Phase
 	xargs.WorkerId = reply.WorkerId
-	xargs.InputFile = filenames[0]
+	xargs.SplitId = reply.Y
 	xreply := TaskReportReply{}
 	err := call("Master.Collect", &xargs, &xreply)
+
+	DPrintf("[Worker]: Worker %d After Reduce, Call Master.Collect to report status\n", reply.WorkerId)
+
 	if err != true {
-		DPrintf("[Worker]: After Reduce, Call Master Collect error\n")
+		DPrintf("[Worker]: Worker %d After Reduce, Call Master Collect error\n", reply.WorkerId)
 	}
 
 	//DPrintf("[Worker]: reply.Accept: %s \n", xreply.Accept)
 	if xreply.Accept == true{
 		for i, v := range tmpFiles{
-			//DPrintf("[Worker]: Renaming %s to %s\n", v, realFiles[i])
+			DPrintf("[Worker]: Worker %d Renaming %s to %s, content: %v \n",reply.WorkerId, v, realFiles[i], content)
 			err2 := os.Rename(v, realFiles[i])
 			if err2 != nil {
-				DPrintf("[Worker]: Rename error: %s\n", err2)
+				DPrintf("[Worker]: Worker %d Rename error: %s\n",reply.WorkerId, err2)
 				panic(err2)
 			}
 		}
 	}else{
-		DPrintf("[Worker]: Not Renaming %v \n", tmpFiles)
+		DPrintf("[Worker]: Worker %d Not Renaming %v \n", reply.WorkerId, tmpFiles)
 	}
 
 }
 
-func reduceHelper(intermediate []KeyValue, reducef ReduceF, y int) (tmpFiles, realFiles []string) {
+func reduceHelper(intermediate []KeyValue, reducef ReduceF, y int) (tmpFiles, realFiles,content []string) {
 
 	sort.Sort(ByKey(intermediate))
 
@@ -242,12 +247,13 @@ func reduceHelper(intermediate []KeyValue, reducef ReduceF, y int) (tmpFiles, re
 
 		// this is the correct format for each line of Reduce output.
 		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
-
+		content= append(content, fmt.Sprintf("%v %v", intermediate[i].Key, output))
 		i = j
 	}
 
 	ofile.Close()
 	tmpFiles = append(tmpFiles, tmpName)
 	realFiles = append(realFiles, realName)
-	return tmpFiles, realFiles
+
+	return tmpFiles, realFiles, content
 }
