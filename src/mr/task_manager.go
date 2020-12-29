@@ -45,6 +45,13 @@ func (m *Master) Schedule(args *TaskArgs, reply *TaskReply) error {
 	}
 
 	if len(m.MapFiles) == 0 && len(m.ReduceFiles)==0{
+		/*
+		7. When all map tasks and reduce tasks have been
+		completed, the master wakes up the user program.
+		At this point, the MapReduce call in the user program
+		returns back to the user code.
+		 */
+
 		//DPrintf("[Master]: Schedule, no MapFiles and ReduceFiles found! \n")
 		if m.isReduceFinish()==true{
 			defer m.IsDone.Broadcast()

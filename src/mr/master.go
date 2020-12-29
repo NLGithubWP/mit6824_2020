@@ -70,6 +70,20 @@ func MakeMaster(files []string, nReduce int) *Master {
 	DPrintf("[Master]: MakeMaster..., file length: %d, eg: %s\n", len(files), files[0])
 	// Your code here.
 
+	/*
+	1. The MapReduce library in the user program first
+	splits the input files into M pieces of typically 16
+	megabytes to 64 megabytes (MB) per piece (controllable
+	by the user via an optional parameter). It
+	then starts up many copies of the program on a cluster
+	of machines.
+	 */
+
+	/*
+	There areM map tasks and R reduce
+	tasks to assign. The master picks idle workers and
+	assigns each one a map task or a reduce task.
+	 */
 	m.M = len(files)
 	m.R = nReduce
 

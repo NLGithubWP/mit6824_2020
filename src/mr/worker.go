@@ -106,20 +106,40 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 }
 
 func execMap(reply *TaskReply, mapf MapF){
-	DPrintf("[Worker]: Assigned Map, partitionF, x %d and nReduce %d, \n", reply.X, reply.RTasks)
+
+	//DPrintf("[Worker]: Assigned Map, partitionF, x %d and nReduce %d, \n", reply.X, reply.RTasks)
+
+	/*
+	A worker who is assigned a map task reads the
+	contents of the corresponding input split. It parses
+	key/value pairs out of the input data and passes each
+	pair to the user-defined Map function. The intermediate
+	key/value pairs produced by the Map function
+	are buffered in memory.
+	 */
 
 	filename := reply.FileName[0]
 	content := readFile(filename)
 	kva := mapf(filename, content)
 
+	/*
+	Periodically, the buffered pairs are written to local
+	disk, partitioned into R regions by the partitioning
+	function. The locations of these buffered pairs on
+	the local disk are passed back to the master, who
+	is responsible for forwarding these locations to the
+	reduce workers.
+	 */
+
 	tmpFiles, realFiles := partitionF(kva, reply.X, reply.RTasks, reply.WorkerId, filename)
 
-	xargs := TaskReportArgs{}
+	xargs := TaskReportArgs{
+		Phase:reply.Phase,
+		WorkerId:reply.WorkerId,
+		SplitId:reply.X,
+		IntermediateFiles: realFiles,
+		}
 
-	xargs.Phase = reply.Phase
-	xargs.WorkerId = reply.WorkerId
-	xargs.SplitId = reply.X
-	xargs.IntermediateFiles = realFiles
 	// return the real nameFiles,
 	xreply := TaskReportReply{}
 	DPrintf("[Worker]: Worker %d After Map, Call Master.Collect to report status\n", reply.WorkerId)
@@ -181,6 +201,19 @@ func execReduce(reply *TaskReply,  reducef ReduceF){
 	//DPrintf("[Worker]: Assigned Reduce \n")
 	filenames := reply.FileName
 
+	/*
+	When a reduce worker is notified by the master
+	about these locations, it uses remote procedure calls
+	to read the buffered data from the local disks of the
+	map workers. When a reduce worker has read all intermediate
+	data, it sorts it by the intermediate keys
+	so that all occurrences of the same key are grouped
+	together. The sorting is needed because typically
+	many different keys map to the same reduce task. If
+	the amount of intermediate data is too large to fit in
+	memory, an external sort is used.
+	 */
+
 	var intermediate []KeyValue
 	for _, fname := range filenames{
 		kva := Json2String(fname)
@@ -189,10 +222,11 @@ func execReduce(reply *TaskReply,  reducef ReduceF){
 	//DPrintf("[Worker]: Reduce Args: %v \n", intermediate)
 	tmpFiles, realFiles, content := reduceHelper(intermediate, reducef, reply.Y)
 
-	xargs := TaskReportArgs{}
-	xargs.Phase = reply.Phase
-	xargs.WorkerId = reply.WorkerId
-	xargs.SplitId = reply.Y
+	xargs := TaskReportArgs{
+		Phase:reply.Phase,
+		WorkerId:reply.WorkerId,
+		SplitId:reply.Y,
+	}
 	xreply := TaskReportReply{}
 	err := call("Master.Collect", &xargs, &xreply)
 
@@ -220,8 +254,6 @@ func execReduce(reply *TaskReply,  reducef ReduceF){
 
 func reduceHelper(intermediate []KeyValue, reducef ReduceF, y int) (tmpFiles, realFiles,content []string) {
 
-	sort.Sort(ByKey(intermediate))
-
 	ofile, e :=ioutil.TempFile("./", "outf---")
 	if e!=nil{
 		panic(e)
@@ -229,10 +261,17 @@ func reduceHelper(intermediate []KeyValue, reducef ReduceF, y int) (tmpFiles, re
 	tmpName := ofile.Name()
 	realName := fmt.Sprintf(BaseDir+"mr-out-%d",y)
 
-	//
-	// call Reduce on each distinct key in intermediate[],
-	// and print the result to mr-out-0.
-	//
+	sort.Sort(ByKey(intermediate))
+
+	/*
+	The reduce worker iterates over the sorted intermediate
+	data and for each unique intermediate key encountered,
+	it passes the key and the corresponding
+	set of intermediate values to the user’s Reduce function.
+	The output of the Reduce function is appended
+	to a final output file for this reduce partition
+	 */
+
 	i := 0
 	for i < len(intermediate) {
 		j := i + 1
